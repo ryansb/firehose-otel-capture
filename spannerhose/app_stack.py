@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import zipfile
 from base64 import b64encode
@@ -16,18 +17,29 @@ from aws_cdk import aws_s3 as s3
 from constructs import Construct
 
 
+def p(*args):
+    print(*args, file=sys.stderr)
+
+
+def _in_mb(path: os.PathLike):
+    """Given a file path, convert to humanized string "X.YZMB"
+
+    Uses 2^20 bytes == 1 MB"""
+    return f"{path.stat().st_size / 2**20:.2f}MB"
+
+
 def build_deployment_zip(save_to: str):
-    epoch_2020 = int(datetime(year=2020, month=1, day=1).timestamp())
+    epoch_force = int(datetime(year=2020, month=2, day=20).timestamp())
 
     rust_dir = Path(__file__).parent.parent / "hose-carrier"
-    print(f"Building musl-linux targeted zip for Lambda layer {rust_dir=}")
+    p(f"Building musl-linux targeted zip for Lambda layer cwd={str(rust_dir)}")
 
     # install via pip to a temporary directory
     if rc := subprocess.check_call(
         "cargo build --release --target x86_64-unknown-linux-musl".split(" "),
         cwd=rust_dir,
     ):
-        print(f"error: cargo build failed with exit code {rc}")
+        p(f"error: cargo build failed with exit code {rc}")
         raise Exception("Could not build asset")
 
     with zipfile.ZipFile(save_to, "w", compression=zipfile.ZIP_DEFLATED) as package:
@@ -38,9 +50,12 @@ def build_deployment_zip(save_to: str):
             / "release"
             / "hose-carrier"
         )
-        # forcing the mtime to January 1, 2020 to keep hashes consistent
-        os.utime(bin_path, (epoch_2020, epoch_2020))
+        # forcing the mtime to 2020/02/20 to enable reproducible builds
+        os.utime(bin_path, (epoch_force, epoch_force))
         package.write(bin_path, "extensions/hose-carrier")
+    p(
+        f"Finished building zipfile zipped_size={_in_mb(Path(save_to))} raw_size={_in_mb(bin_path)}"
+    )
     return save_to
 
 
@@ -55,7 +70,7 @@ kdf = boto3.client('firehose')
 def handler(event, context):
     # TODO
     # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/firehose.html#Firehose.Client.put_record_batch
-    for i in (None, 'busy', 'busy', 'busy', 'busy', 'busy', 'busy', 'busy', 'something', 'someother'):
+    for i in (None, 'someother'):
         event['v3'] = True
         if i:
             event['service.namespace'] = i
@@ -65,23 +80,6 @@ def handler(event, context):
                 'Data': dumps(event, default=str).encode()
             }
         )
-    event.pop('service.namespace', None)
-    kdf.put_record(
-        DeliveryStreamName=os.getenv('FIREHOSE'),
-        Record={
-            'Data': (
-                dumps(
-                    dict(agg=True, **event),
-                    default=str
-                )
-                + "||" +
-                dumps(
-                    dict(agg2=True, **event),
-                    default=str
-                )
-            ).encode()
-        }
-    )
     return {'ok': True}
 """.strip()
 )
@@ -91,7 +89,14 @@ class AppStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        # The code that defines your stack goes here
+        rust_layer = func.LayerVersion(
+            self,
+            "HoseCarrier",
+            code=func.Code.from_asset(build_deployment_zip("hose-carrier.zip")),
+            compatible_runtimes=[func.Runtime.PYTHON_3_8],
+            layer_version_name="hose-carrier",
+        )
+
         dest = s3.Bucket(
             self,
             "Archive",
@@ -125,19 +130,19 @@ class AppStack(Stack):
         )
         Function(
             self,
-            "Tester",
+            "WithCarrier",
             code=f_code,
             handler="index.handler",
             environment={"FIREHOSE": archive.ref, "RUST_BACKTRACE": "1"},
             managed_policies=[write_policy],
-        ).function.add_layers(
-            func.LayerVersion(
-                self,
-                "HoseCarrier",
-                code=func.Code.from_asset(build_deployment_zip("hose-carrier.zip")),
-                compatible_runtimes=[func.Runtime.PYTHON_3_8],
-                layer_version_name="hose-carrier",
-            )
+        ).function.add_layers(rust_layer)
+        Function(
+            self,
+            "NoCarrier",
+            code=f_code,
+            handler="index.handler",
+            environment={"FIREHOSE": archive.ref, "RUST_BACKTRACE": "1"},
+            managed_policies=[write_policy],
         )
 
 
@@ -264,7 +269,7 @@ class Function(constructs.Construct):
                 "Logs",
                 log_group_name=f"/aws/lambda/{self.function.function_name}",
                 removal_policy=RemovalPolicy.DESTROY,
-                retention=logs.RetentionDays.TWO_WEEKS,
+                retention=logs.RetentionDays.THREE_DAYS,
             )
             self.role.add_to_principal_policy(
                 iam.PolicyStatement(

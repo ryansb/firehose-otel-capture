@@ -9,7 +9,6 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::env;
-use std::time;
 
 const EXTENSION_NAME: &str = "hose-carrier";
 const EXTENSION_NAME_HEADER: &str = "Lambda-Extension-Name";
@@ -85,13 +84,17 @@ fn register(client: &reqwest::blocking::Client) -> Result<RegisterResponse> {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    let hose = String::from("SpannerHose-LakeStreamFF47BEAA-jUKyOeLdxYqd");
+    let hose = env::var("FIREHOSE")
+        .ok()
+        .or_else(|| Some(String::from("SpannerHose-LakeStreamFF47BEAA-jUKyOeLdxYqd")))
+        .unwrap();
     let verbose = true;
 
     let region_provider =
         RegionProviderChain::first_try(env::var("AWS_REGION").ok().map(Region::new))
             .or_default_provider()
             .or_else(Region::new("us-west-2"));
+
     let shared_config = aws_config::from_env().region(region_provider).load().await;
     let client = FirehoseClient::new(&shared_config);
 
@@ -122,7 +125,6 @@ async fn handle_lambda_events(event_shipper: Box<dyn Fn(&str) -> PutRecord>) -> 
     let client = Client::builder().timeout(None).build()?;
     let r = register(&client)?;
     loop {
-        std::thread::sleep(time::Duration::from_secs(1));
         println!("Waiting for event...");
         let evt = next_event(&client, &r.extension_id);
 
@@ -131,9 +133,18 @@ async fn handle_lambda_events(event_shipper: Box<dyn Fn(&str) -> PutRecord>) -> 
                 NextEventResponse::Invoke {
                     request_id,
                     deadline_ms,
+                    invoked_function_arn,
                     ..
                 } => {
-                    println!("event send {:?}", event_shipper("foo").send().await?);
+                    let res = event_shipper(
+                        format!(
+                            // very lazy JSON
+                            "{{\"request\":\"{}\", \"function_arn\":\"{}\"}}",
+                            request_id, invoked_function_arn
+                        ).as_str())
+                        .send()
+                        .await?;
+                    println!("event send {:?}", res);
                     println!("Start event {}; deadline: {}", request_id, deadline_ms);
                 }
                 NextEventResponse::Shutdown {
