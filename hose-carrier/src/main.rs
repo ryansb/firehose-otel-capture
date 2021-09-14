@@ -1,12 +1,14 @@
 use anyhow::{ensure, Result};
+use aws_config::meta::region::RegionProviderChain;
+use aws_sdk_firehose::client::fluent_builders::PutRecord;
+use aws_sdk_firehose::model::Record;
+use aws_sdk_firehose::Client as FirehoseClient;
+use aws_sdk_firehose::{Blob, Error, Region, PKG_VERSION};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
 use serde::Deserialize;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::env;
-use std::fs;
-use std::io::BufReader;
 use std::time;
 
 const EXTENSION_NAME: &str = "hose-carrier";
@@ -81,37 +83,48 @@ fn register(client: &reqwest::blocking::Client) -> Result<RegisterResponse> {
     })
 }
 
-#[derive(Deserialize)]
-struct InvocationResult {
-    payload: Value,
-}
+#[tokio::main]
+async fn main() -> Result<(), Error> {
+    let hose = String::from("SpannerHose-LakeStreamFF47BEAA-jUKyOeLdxYqd");
+    let verbose = true;
 
-fn read_result(req_id: String) -> Result<InvocationResult> {
-    let filename = format!("/tmp/{}", req_id);
-    let f = fs::File::open(filename)?;
-    let reader = BufReader::new(f);
-    let res = serde_json::from_reader(reader)?;
-    Ok(res)
-}
+    let region_provider =
+        RegionProviderChain::first_try(env::var("AWS_REGION").ok().map(Region::new))
+            .or_default_provider()
+            .or_else(Region::new("us-west-2"));
+    let shared_config = aws_config::from_env().region(region_provider).load().await;
+    let client = FirehoseClient::new(&shared_config);
 
-fn process_result(req_id: String) {
-    match read_result(req_id) {
-        Ok(InvocationResult { payload }) => println!("Payload: {}", payload),
-        Err(e) => eprintln!("Error processing invocation result: {:?}", e),
+    if verbose {
+        println!("S3 client version: {}", PKG_VERSION);
+        println!("Region:            {}", shared_config.region().unwrap());
+        println!("Firehose Name:     {}", &hose);
     }
+
+    let send_data_closure = move |data: &str| {
+        client
+            .put_record()
+            .delivery_stream_name(&hose)
+            .record(Record::builder().data(Blob::new(data.as_bytes())).build())
+    };
+
+    println!("Loaded and sent liveness message...");
+    match handle_lambda_events(Box::new(send_data_closure)).await {
+        Err(error) => panic!("Something went wrong with the main waiter loop {:?}", error),
+        Ok(_) => println!("Done waiting around"),
+    };
+
+    Ok(())
 }
 
-fn main() -> Result<()> {
+async fn handle_lambda_events(event_shipper: Box<dyn Fn(&str) -> PutRecord>) -> Result<()> {
     println!("Loaded bin...");
     let client = Client::builder().timeout(None).build()?;
     let r = register(&client)?;
-    let mut prev_request: Option<String> = Option::None;
     loop {
         std::thread::sleep(time::Duration::from_secs(1));
         println!("Waiting for event...");
         let evt = next_event(&client, &r.extension_id);
-
-        prev_request.map(process_result);
 
         match evt {
             Ok(evt) => match evt {
@@ -120,8 +133,8 @@ fn main() -> Result<()> {
                     deadline_ms,
                     ..
                 } => {
+                    println!("event send {:?}", event_shipper("foo").send().await?);
                     println!("Start event {}; deadline: {}", request_id, deadline_ms);
-                    prev_request = Some(request_id);
                 }
                 NextEventResponse::Shutdown {
                     shutdown_reason, ..
