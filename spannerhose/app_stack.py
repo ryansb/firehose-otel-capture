@@ -1,4 +1,9 @@
+import os
+import subprocess
+import zipfile
 from base64 import b64encode
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import constructs
@@ -9,6 +14,35 @@ from aws_cdk import aws_lambda as func
 from aws_cdk import aws_logs as logs
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
+
+
+def build_deployment_zip(save_to: str):
+    epoch_2020 = int(datetime(year=2020, month=1, day=1).timestamp())
+
+    rust_dir = Path(__file__).parent.parent / "hose-carrier"
+    print(f"Building musl-linux targeted zip for Lambda layer {rust_dir=}")
+
+    # install via pip to a temporary directory
+    if rc := subprocess.check_call(
+        "cargo build --release --target x86_64-unknown-linux-musl".split(" "),
+        cwd=rust_dir,
+    ):
+        print(f"error: cargo build failed with exit code {rc}")
+        raise Exception("Could not build asset")
+
+    with zipfile.ZipFile(save_to, "w", compression=zipfile.ZIP_DEFLATED) as package:
+        bin_path = (
+            rust_dir
+            / "target"
+            / "x86_64-unknown-linux-musl"
+            / "release"
+            / "hose-carrier"
+        )
+        # forcing the mtime to January 1, 2020 to keep hashes consistent
+        os.utime(bin_path, (epoch_2020, epoch_2020))
+        package.write(bin_path, "extensions/hose-carrier")
+    return save_to
+
 
 # TODO base an extension on this that takes OTLP export
 # https://docs.aws.amazon.com/lambda/latest/dg/runtimes-extensions-api.html
@@ -67,10 +101,10 @@ class AppStack(Stack):
                 s3.LifecycleRule(
                     abort_incomplete_multipart_upload_after=Duration.days(1),
                     expiration=Duration.days(3),
-                    # noncurrent_version_expiration=Duration.days(1),
+                    noncurrent_version_expiration=Duration.days(1),
                 )
             ],
-            # versioned=True,
+            versioned=True,
             removal_policy=RemovalPolicy.DESTROY,
         )
         archive = SpanArchive(self, "Lake", dest)
@@ -100,7 +134,7 @@ class AppStack(Stack):
             func.LayerVersion(
                 self,
                 "HoseCarrier",
-                code=func.Code.from_asset("hose-carrier.zip"),
+                code=func.Code.from_asset(build_deployment_zip("hose-carrier.zip")),
                 compatible_runtimes=[func.Runtime.PYTHON_3_8],
                 layer_version_name="hose-carrier",
             )
