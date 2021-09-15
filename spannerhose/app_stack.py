@@ -83,6 +83,22 @@ def handler(event, context):
     return {'ok': True}
 """.strip()
 )
+loc_code = func.InlineCode(
+    """
+import http.client
+from json import dumps
+def handler(event, context):
+    client = http.client.HTTPConnection('localhost:3030')
+    event['long'] = 'a' * 140
+    for i in (None, 'someother', 'athird'):
+        event['v3'] = True
+        if i:
+            event['service.namespace'] = i
+        client.request("POST", "/hose", dumps(event, default=str).encode())
+        client.getresponse().read().decode()
+    return {'ok': True}
+""".strip()
+)
 
 
 class AppStack(Stack):
@@ -105,7 +121,7 @@ class AppStack(Stack):
             lifecycle_rules=[
                 s3.LifecycleRule(
                     abort_incomplete_multipart_upload_after=Duration.days(1),
-                    expiration=Duration.days(3),
+                    expiration=Duration.days(1),
                     noncurrent_version_expiration=Duration.days(1),
                 )
             ],
@@ -131,9 +147,9 @@ class AppStack(Stack):
         Function(
             self,
             "WithCarrier",
-            code=f_code,
+            code=loc_code,
             handler="index.handler",
-            environment={"FIREHOSE": archive.ref, "RUST_BACKTRACE": "1"},
+            environment={"HOSE_CARRIER_TARGET": archive.ref},
             managed_policies=[write_policy],
         ).function.add_layers(rust_layer)
         Function(
@@ -141,7 +157,7 @@ class AppStack(Stack):
             "NoCarrier",
             code=f_code,
             handler="index.handler",
-            environment={"FIREHOSE": archive.ref, "RUST_BACKTRACE": "1"},
+            environment={"FIREHOSE": archive.ref},
             managed_policies=[write_policy],
         )
 
@@ -184,6 +200,9 @@ class SpanArchive(constructs.Construct):
             extended_s3_destination_configuration={
                 "bucketArn": dest.bucket_arn,
                 "roleArn": self.role.role_arn,
+                "bufferingHints": {
+                    "intervalInSeconds": 60,
+                },
                 "compressionFormat": "UNCOMPRESSED",
                 # namespace can't be projected
                 # but date can https://docs.aws.amazon.com/athena/latest/ug/partition-projection-setting-up.html
@@ -203,7 +222,7 @@ class SpanArchive(constructs.Construct):
                                 },
                                 {
                                     "parameterName": "Delimiter",
-                                    "parameterValue": b64encode(b"||").decode(),
+                                    "parameterValue": b64encode(b"\n").decode(),
                                 },
                             ],
                         },

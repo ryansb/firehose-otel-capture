@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2018"
 
 # optimizations from https://github.com/johnthagen/min-sized-rust
-# [profile.release]
-# lto = true
+[profile.release]
+lto = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -14,6 +14,8 @@ anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 reqwest = { version = "0.10.8", default-features = false, features = ["blocking", "json"] }
-aws-config = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-config" }
-aws-sdk-firehose = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-sdk-firehose" }
+aws-config = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.18-alpha", package = "aws-config" }
+aws-sdk-firehose = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.18-alpha", package = "aws-sdk-firehose" }
 tokio = { version = "1", features = ["full"] }
+warp = "0.3"
+futures = "0.3"
