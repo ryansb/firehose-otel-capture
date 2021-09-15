@@ -3,6 +3,10 @@ name = "hose-carrier"
 version = "0.1.0"
 edition = "2018"
 
+# optimizations from https://github.com/johnthagen/min-sized-rust
+# [profile.release]
+# lto = true
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]

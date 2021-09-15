@@ -1,6 +1,5 @@
 use anyhow::{ensure, Result};
 use aws_config::meta::region::RegionProviderChain;
-use aws_sdk_firehose::client::fluent_builders::PutRecord;
 use aws_sdk_firehose::model::Record;
 use aws_sdk_firehose::Client as FirehoseClient;
 use aws_sdk_firehose::{Blob, Error, Region, PKG_VERSION};
@@ -9,6 +8,7 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::env;
+use tokio::sync::mpsc;
 
 const EXTENSION_NAME: &str = "hose-carrier";
 const EXTENSION_NAME_HEADER: &str = "Lambda-Extension-Name";
@@ -82,45 +82,59 @@ fn register(client: &reqwest::blocking::Client) -> Result<RegisterResponse> {
     })
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Error> {
-    let hose = env::var("FIREHOSE")
-        .ok()
-        .or_else(|| Some(String::from("SpannerHose-LakeStreamFF47BEAA-jUKyOeLdxYqd")))
-        .unwrap();
-    let verbose = true;
+async fn message_forwarding_worker(mut incoming: mpsc::Receiver<String>) {
+    let (hose, client) = build_client().await;
+    loop {
+        match incoming.recv().await {
+            None => break,
+            Some(data) => {
+                match client
+                    .put_record()
+                    .delivery_stream_name(&hose)
+                    .record(
+                        Record::builder()
+                            .data(Blob::new(data.as_str().as_bytes()))
+                            .build(),
+                    )
+                    .send()
+                    .await
+                {
+                    Err(err) => {
+                        eprintln!("Error: {:?}", err);
+                        println!("Exiting after error");
+                    }
+                    Ok(_) => {
+                        println!("Sent kinesis msg");
+                    }
+                }
+            }
+        }
+    }
+}
 
+async fn build_client() -> (String, FirehoseClient) {
+    // create the Firehose client based on the env vars for AWS_REGION, FIREHOSE, and AWS_ creds
     let region_provider =
         RegionProviderChain::first_try(env::var("AWS_REGION").ok().map(Region::new))
             .or_default_provider()
             .or_else(Region::new("us-west-2"));
 
     let shared_config = aws_config::from_env().region(region_provider).load().await;
-    let client = FirehoseClient::new(&shared_config);
 
-    if verbose {
-        println!("S3 client version: {}", PKG_VERSION);
-        println!("Region:            {}", shared_config.region().unwrap());
-        println!("Firehose Name:     {}", &hose);
-    }
-
-    let send_data_closure = move |data: &str| {
-        client
-            .put_record()
-            .delivery_stream_name(&hose)
-            .record(Record::builder().data(Blob::new(data.as_bytes())).build())
-    };
-
-    println!("Loaded and sent liveness message...");
-    match handle_lambda_events(Box::new(send_data_closure)).await {
-        Err(error) => panic!("Something went wrong with the main waiter loop {:?}", error),
-        Ok(_) => println!("Done waiting around"),
-    };
-
-    Ok(())
+    let hose = env::var("FIREHOSE")
+        .ok()
+        .or_else(|| Some(String::from("SpannerHose-LakeStreamFF47BEAA-jUKyOeLdxYqd")))
+        .unwrap();
+    println!(
+        "PKG_VERSION={} Region={} FirehoseName={}",
+        PKG_VERSION,
+        shared_config.region().unwrap(),
+        hose
+    );
+    (hose, FirehoseClient::new(&shared_config))
 }
 
-async fn handle_lambda_events(event_shipper: Box<dyn Fn(&str) -> PutRecord>) -> Result<()> {
+async fn handle_lambda_events(transmit_queue: mpsc::Sender<String>) -> Result<()> {
     println!("Loaded bin...");
     let client = Client::builder().timeout(None).build()?;
     let r = register(&client)?;
@@ -136,15 +150,17 @@ async fn handle_lambda_events(event_shipper: Box<dyn Fn(&str) -> PutRecord>) -> 
                     invoked_function_arn,
                     ..
                 } => {
-                    let res = event_shipper(
-                        format!(
-                            // very lazy JSON
-                            "{{\"request\":\"{}\", \"function_arn\":\"{}\"}}",
-                            request_id, invoked_function_arn
-                        ).as_str())
-                        .send()
-                        .await?;
-                    println!("event send {:?}", res);
+                    let s = format!(
+                        // very lazy JSON
+                        "{{\"request\":\"{}\", \"function_arn\":\"{}\"}}",
+                        request_id, invoked_function_arn
+                    );
+                    match transmit_queue.send(s).await {
+                        Ok(_) => {}
+                        Err(err) => {
+                            eprintln!("Could not send string to transmit_queue: {:?}", err)
+                        }
+                    };
                     println!("Start event {}; deadline: {}", request_id, deadline_ms);
                 }
                 NextEventResponse::Shutdown {
@@ -161,4 +177,20 @@ async fn handle_lambda_events(event_shipper: Box<dyn Fn(&str) -> PutRecord>) -> 
             }
         }
     }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Error> {
+    let (tx, rx) = mpsc::channel::<String>(5);
+    let forwarder_handle = tokio::spawn(message_forwarding_worker(rx));
+
+    println!("Loaded and sent liveness message...");
+    match handle_lambda_events(tx).await {
+        Err(error) => panic!("Something went wrong with the main waiter loop {:?}", error),
+        Ok(_) => println!("Done waiting around"),
+    };
+
+    forwarder_handle.await.unwrap();
+
+    Ok(())
 }
