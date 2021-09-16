@@ -1,2 +1,2 @@
 #!/bin/zsh
-find . -name '*.rs' -or -name '*.toml' | egrep -v '^./target' | entr -d cargo build
+find . -name '*.rs' -or -name '*.toml' | egrep -v '^./target' | entr -cd cargo build
