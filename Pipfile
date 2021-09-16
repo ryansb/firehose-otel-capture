@@ -1,0 +1,18 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+spannerhose = {editable = true, path = "."}
+
+[dev-packages]
+ptpython = "*"
+
+[scripts]
+synth = "cdk synth --no-version-reporting"
+diff = "cdk diff --no-version-reporting"
+deploy = "cdk deploy --no-version-reporting"
+
+[requires]
+python_version = "3.9"

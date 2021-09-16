@@ -3,8 +3,14 @@ package-lock.json
 __pycache__
 .pytest_cache
 .venv
+.vscode/
 *.egg-info
 
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+
+# rust stuff
+hose-carrier/target
+hose-carrier.zip
+extensions/
