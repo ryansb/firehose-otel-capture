@@ -42,20 +42,26 @@ def build_deployment_zip(save_to: str):
         p(f"error: cargo build failed with exit code {rc}")
         raise Exception("Could not build asset")
 
+    bin_path = (
+        rust_dir / "target" / "x86_64-unknown-linux-musl" / "release" / "hose-carrier"
+    )
+
+    try:
+        if rc := subprocess.check_call(
+            ["upx", bin_path],
+            cwd=rust_dir,
+        ):
+            p(f"error: Could not run upx. Exit code {rc}")
+            raise Exception("Could not build asset")
+    except FileNotFoundError:
+        p("warn: upx not installed, skipping binary compression")
+
     with zipfile.ZipFile(save_to, "w", compression=zipfile.ZIP_DEFLATED) as package:
-        bin_path = (
-            rust_dir
-            / "target"
-            / "x86_64-unknown-linux-musl"
-            / "release"
-            / "hose-carrier"
-        )
         # forcing the mtime to 2020/02/20 to enable reproducible builds
         os.utime(bin_path, (epoch_force, epoch_force))
         package.write(bin_path, "extensions/hose-carrier")
-    p(
-        f"Finished building zipfile zipped_size={_in_mb(Path(save_to))} raw_size={_in_mb(bin_path)}"
-    )
+
+    p(f"Layer asset: zipped_size={_in_mb(Path(save_to))} raw_size={_in_mb(bin_path)}")
     return save_to
 
 
@@ -89,6 +95,16 @@ import http.client
 from json import dumps
 def handler(event, context):
     client = http.client.HTTPConnection('localhost:3030')
+    client.request(
+        "POST",
+        "/hose",
+        dumps(dict(
+            aws_request_id=context.aws_request_id,
+            aws_lambda_arn=context.invoked_function_arn,
+            **event,
+        ), default=str).encode()
+    )
+    client.getresponse().read().decode()
     event['long'] = 'a' * 140
     for i in (None, 'someother', 'athird'):
         event['v3'] = True
