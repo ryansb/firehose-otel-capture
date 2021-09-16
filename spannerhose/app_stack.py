@@ -1,6 +1,6 @@
 import os
-import sys
 import subprocess
+import sys
 import zipfile
 from base64 import b64encode
 from datetime import datetime
@@ -68,27 +68,6 @@ def build_deployment_zip(save_to: str):
 # TODO base an extension on this that takes OTLP export
 # https://docs.aws.amazon.com/lambda/latest/dg/runtimes-extensions-api.html
 # or skip extension and make an otlp-exporter library
-f_code = func.InlineCode(
-    """
-import boto3, os
-from json import dumps
-kdf = boto3.client('firehose')
-def handler(event, context):
-    # TODO
-    # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/firehose.html#Firehose.Client.put_record_batch
-    for i in (None, 'someother'):
-        event['v3'] = True
-        if i:
-            event['service.namespace'] = i
-        kdf.put_record(
-            DeliveryStreamName=os.getenv('FIREHOSE'),
-            Record={
-                'Data': dumps(event, default=str).encode()
-            }
-        )
-    return {'ok': True}
-""".strip()
-)
 loc_code = func.InlineCode(
     """
 import http.client
@@ -168,14 +147,6 @@ class AppStack(Stack):
             environment={"HOSE_CARRIER_TARGET": archive.ref},
             managed_policies=[write_policy],
         ).function.add_layers(rust_layer)
-        Function(
-            self,
-            "NoCarrier",
-            code=f_code,
-            handler="index.handler",
-            environment={"FIREHOSE": archive.ref},
-            managed_policies=[write_policy],
-        )
 
 
 class SpanArchive(constructs.Construct):
@@ -278,7 +249,6 @@ class Function(constructs.Construct):
         handler: str,
         managed_policies: List[iam.IManagedPolicy],
         environment: Dict[str, Any],
-        allow_logging: bool = True,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -286,8 +256,21 @@ class Function(constructs.Construct):
             self,
             "Role",
             assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+            inline_policies=[
+                iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            actions=["logs:CreateLogStream", "logs:PutLogEvents"],
+                            resources=[
+                                f"arn:{Fn.ref('AWS::Partition')}:logs:{Fn.ref('AWS::Region')}:{Fn.ref('AWS::AccountId')}:log-group:/aws/lambda/{Fn.ref('AWS::StackName')}-{construct_id}F*",
+                            ],
+                        )
+                    ]
+                )
+            ],
             managed_policies=managed_policies,
         )
+
         self.function = func.Function(
             self,
             "Func",
@@ -298,22 +281,10 @@ class Function(constructs.Construct):
             role=self.role,
         )
 
-        if allow_logging:
-            self.log_group = logs.LogGroup(
-                self,
-                "Logs",
-                log_group_name=f"/aws/lambda/{self.function.function_name}",
-                removal_policy=RemovalPolicy.DESTROY,
-                retention=logs.RetentionDays.THREE_DAYS,
-            )
-            self.role.add_to_principal_policy(
-                iam.PolicyStatement(
-                    actions=[
-                        "logs:CreateLogStream",
-                        "logs:PutLogEvents",
-                    ],
-                    resources=[
-                        f"arn:{Fn.ref('AWS::Partition')}:logs:{Fn.ref('AWS::Region')}:{Fn.ref('AWS::AccountId')}:log-group:/aws/lambda/{Fn.ref('AWS::StackName')}-{construct_id}F*",
-                    ],
-                )
-            )
+        self.log_group = logs.LogGroup(
+            self,
+            "Logs",
+            log_group_name=f"/aws/lambda/{self.function.function_name}",
+            removal_policy=RemovalPolicy.DESTROY,
+            retention=logs.RetentionDays.THREE_DAYS,
+        )

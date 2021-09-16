@@ -9,6 +9,7 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::env;
+use std::time::SystemTime;
 use tokio::sync::{mpsc, oneshot};
 use warp::reject;
 use warp::{Buf, Filter};
@@ -142,7 +143,7 @@ async fn client_from_env() -> (String, FirehoseClient) {
 
     let hose = env::var("HOSE_CARRIER_TARGET").ok().unwrap();
     println!(
-        "HoseCarrier: PKG_VERSION={} Region={} FirehoseName={}",
+        "HoseCarrier: FirehoseSdk=v{} Region={} FirehoseName={}",
         PKG_VERSION,
         shared_config.region().unwrap(),
         hose
@@ -160,15 +161,14 @@ async fn lifecycle_event_loop(transmit_queue: mpsc::Sender<String>) -> Result<()
             Ok(evt) => match evt {
                 NextEventResponse::Invoke {
                     request_id,
-                    deadline_ms,
                     invoked_function_arn,
                     ..
                 } => {
                     if let Err(err) = transmit_queue
                         .send(format!(
                             // very lazy JSON
-                            "{{\"amzn-request\":\"{}\", \"function-arn\":\"{}\", \"deadline-ms\": {}}}",
-                            request_id, invoked_function_arn, deadline_ms
+                            "{{\"service.namespace\":\"aws-lambda-invoke\", \"now-epoch-ms\":{}, \"aws-request-id\":\"{}\", \"function-arn\":\"{}\"}}",
+                            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?.as_millis(), request_id, invoked_function_arn
                         ))
                         .await
                     {
