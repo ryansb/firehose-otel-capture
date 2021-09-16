@@ -1,58 +1,27 @@
+# firehose-otel-capture
 
-# Welcome to your CDK Python project!
+`spannerhose` is an AWS Kinesis Firehose collector for opentelemetry or other JSON events
 
-This is a blank project for Python development with CDK.
-
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
-
-This project is set up like a standard Python project.  The initialization
-process also creates a virtualenv within this project, stored under the `.venv`
-directory.  To create the virtualenv it assumes that there is a `python3`
-(or `python` for Windows) executable in your path with access to the `venv`
-package. If for any reason the automatic creation of the virtualenv fails,
-you can create the virtualenv manually.
-
-To manually create a virtualenv on MacOS and Linux:
+This project uses Firehose's new [Dynamic Partitioning](https://aws.amazon.com/blogs/big-data/kinesis-data-firehose-now-supports-dynamic-partitioning-to-amazon-s3/) to partition incoming JSON events by the OpenTelemetry `service.namespace` field. Bucket contents are partitioned using custom [S3 prefixes](https://docs.aws.amazon.com/firehose/latest/dev/s3-prefixes.html):
 
 ```
-$ python3 -m venv .venv
+traces/namespace=!{partitionKeyFromQuery:ns}/date=!{timestamp:yyyy-MM-dd}/
+
+ns = ."service.namespace" OR "nil"
+timestamp = current UTC time, as YYYY-MM-DD
+
+Sample path:
+traces/namespace=petstore/date=2021-02-01/SpannerHose-LakeStreamFF47BEAA-jUKyOeLdxYqd-1-2021-02-01-15-22-36-d49a6ead-b4fc-315e-b7c7-7590ff6bb336
 ```
 
-After the init process completes and the virtualenv is created, you can use the following
-step to activate your virtualenv.
+## Usage
 
-```
-$ source .venv/bin/activate
-```
+`pipenv run synth` - build the rust sidecar and CDK stack
 
-If you are a Windows platform, you would activate the virtualenv like this:
+`pipenv run deploy` - deploy the `spannerhose` stack to your local AWS account/region with environment credentials
 
-```
-% .venv\Scripts\activate.bat
-```
+`cd hose-carrier ; ./rush` - live compiler session for working on the sidecar
 
-Once the virtualenv is activated, you can install the required dependencies.
+## Thanks
 
-```
-$ pip install -r requirements.txt
-```
-
-At this point you can now synthesize the CloudFormation template for this code.
-
-```
-$ cdk synth
-```
-
-To add additional dependencies, for example other CDK libraries, just add
-them to your `setup.py` file and rerun the `pip install -r requirements.txt`
-command.
-
-## Useful commands
-
- * `cdk ls`          list all stacks in the app
- * `cdk synth`       emits the synthesized CloudFormation template
- * `cdk deploy`      deploy this stack to your default AWS account/region
- * `cdk diff`        compare deployed stack with current state
- * `cdk docs`        open CDK documentation
-
-Enjoy!
+This project wouldn't be around without the AWS Labs cross-compilation docs in [aws-lambda-rust-runtime](https://github.com/awslabs/aws-lambda-rust-runtime), Duarte's [Building a Lambda Extension in Rust](https://dev.to/aws-builders/building-an-aws-lambda-extension-with-rust-3p81) tutorial, and the [aws-sdk-rs](https://github.com/awslabs/aws-sdk-rust) team.
