@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "741ecf5c8dcbebcabdb7573a49f2a0c86b5599334f4c9c614db24acf738a661c"
+            "sha256": "982e30f46d09cc038c9b876ba9163ef1ada4a730dda3f3a8644d24ad5833219c"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -16,10 +16,6 @@
         ]
     },
     "default": {
-        "app": {
-            "editable": true,
-            "path": "."
-        },
         "attrs": {
             "hashes": [
                 "sha256:149e90d6d8ac20db7a955ad60cf0e6881a3f20d37096140088356da6c716b0b1",
@@ -33,8 +29,8 @@
                 "sha256:7a9cf65816cdcd94c4a1b29129cb91bffe5c2ababec01ab7f0f4b8c1c027939e",
                 "sha256:8a976a344139f24c77cea01a6ca9eaa5d071ee14bc2ec5f2a2c13eb2760a3843"
             ],
-            "markers": "python_version >= '3.6'",
-            "version": "==2.0.0rc21"
+            "index": "pypi",
+            "version": "==2.0.0-rc.21"
         },
         "cattrs": {
             "hashes": [
@@ -49,7 +45,7 @@
                 "sha256:dbaebcc8a9aba95feba6829d0569478d384ab8275b3a7ea497a5cebb38164123",
                 "sha256:e21193c260962adfd21dbf453456ffcf2912b8fd515e2c1ce9428a435ff8028e"
             ],
-            "markers": "python_version >= '3.6'",
+            "index": "pypi",
             "version": "==10.0.5"
         },
         "jsii": {
@@ -72,7 +68,7 @@
                 "sha256:0123cacc1627ae19ddf3c27a5de5bd67ee4586fbdd6440d9748f8abb483d3e86",
                 "sha256:961d03dc3453ebbc59dbdea9e4e11c5651520a876d0f4db161e8674aae935da9"
             ],
-            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2'",
+            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3'",
             "version": "==2.8.2"
         },
         "six": {
@@ -80,12 +76,8 @@
                 "sha256:1e61c37477a1626458e36f7b1d82aa5c9b094fa4802892072e49de9c60c4c926",
                 "sha256:8abb2f1d86890a2dfb989f9a77cfcfd3e47c2a354b01111771326f8aa26e0254"
             ],
-            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2'",
+            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3'",
             "version": "==1.16.0"
-        },
-        "spannerhose": {
-            "editable": true,
-            "path": "."
         },
         "typing-extensions": {
             "hashes": [
@@ -130,11 +122,11 @@
         },
         "ptpython": {
             "hashes": [
-                "sha256:b3d41ce7c2ce0e7e55051347eae400fc56b9b42b1c4a9db25b19ccf6195bfc12",
-                "sha256:c0f5d6516077d95175169fbc9bf9ade9211bbfdbd2e665c96e34637e3b0f9ae2"
+                "sha256:99636899ab0e4d026e2ecc9368269114f387b4bb5411e57f072b0bde724d9f99",
+                "sha256:eafd4ced27ca5dc370881d4358d1ab5041b32d88d31af8e3c24167fe4af64ed6"
             ],
             "index": "pypi",
-            "version": "==3.0.19"
+            "version": "==3.0.20"
         },
         "pygments": {
             "hashes": [

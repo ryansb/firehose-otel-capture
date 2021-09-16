@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import subprocess
 import sys
@@ -7,7 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import constructs
+
+import aws_cdk as cdk
 from aws_cdk import Duration, Fn, RemovalPolicy, Stack
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_kinesisfirehose as kdf
@@ -31,7 +33,7 @@ def _in_mb(path: os.PathLike):
 def build_deployment_zip(save_to: str):
     epoch_force = int(datetime(year=2020, month=2, day=20).timestamp())
 
-    rust_dir = Path(__file__).parent.parent / "hose-carrier"
+    rust_dir = Path(__file__).parent / "hose-carrier"
     p(f"Building musl-linux targeted zip for Lambda layer cwd={str(rust_dir)}")
 
     # install via pip to a temporary directory
@@ -149,7 +151,7 @@ class AppStack(Stack):
         ).function.add_layers(rust_layer)
 
 
-class SpanArchive(constructs.Construct):
+class SpanArchive(Construct):
     role: iam.Role
     stream: kdf.CfnDeliveryStream
 
@@ -236,7 +238,7 @@ class SpanArchive(constructs.Construct):
         )
 
 
-class Function(constructs.Construct):
+class Function(Construct):
     log_group: Optional[logs.LogGroup]
     role: iam.Role
     function: func.Function
@@ -288,3 +290,23 @@ class Function(constructs.Construct):
             removal_policy=RemovalPolicy.DESTROY,
             retention=logs.RetentionDays.THREE_DAYS,
         )
+
+
+app = cdk.App()
+
+AppStack(
+    app,
+    "SpannerHose",
+    # If you don't specify 'env', this stack will be environment-agnostic.
+    # Account/Region-dependent features and context lookups will not work,
+    # but a single synthesized template can be deployed anywhere.
+    # Uncomment the next line to specialize this stack for the AWS Account
+    # and Region that are implied by the current CLI configuration.
+    # env=cdk.Environment(account=os.getenv('CDK_DEFAULT_ACCOUNT'), region=os.getenv('CDK_DEFAULT_REGION')),
+    # Uncomment the next line if you know exactly what Account and Region you
+    # want to deploy the stack to. */
+    # env=cdk.Environment(account='123456789012', region='us-east-1'),
+    # For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html
+)
+
+app.synth()
