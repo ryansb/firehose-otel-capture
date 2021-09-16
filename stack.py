@@ -8,7 +8,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-
 import aws_cdk as cdk
 from aws_cdk import Duration, Fn, RemovalPolicy, Stack
 from aws_cdk import aws_iam as iam
@@ -19,18 +18,17 @@ from aws_cdk import aws_s3 as s3
 from constructs import Construct
 
 
-def p(*args):
-    print(*args, file=sys.stderr)
+p = lambda *a: print(*a, file=sys.stderr)
 
 
-def _in_mb(path: os.PathLike):
+def _mb_size(path: os.PathLike):
     """Given a file path, convert to humanized string "X.YZMB"
 
     Uses 2^20 bytes == 1 MB"""
     return f"{path.stat().st_size / 2**20:.2f}MB"
 
 
-def build_deployment_zip(save_to: str):
+def rust_compile_to_zip(save_to: str):
     epoch_force = int(datetime(year=2020, month=2, day=20).timestamp())
 
     rust_dir = Path(__file__).parent / "hose-carrier"
@@ -63,7 +61,9 @@ def build_deployment_zip(save_to: str):
         os.utime(bin_path, (epoch_force, epoch_force))
         package.write(bin_path, "extensions/hose-carrier")
 
-    p(f"Layer asset: zipped_size={_in_mb(Path(save_to))} raw_size={_in_mb(bin_path)}")
+    p(
+        f"Layer asset: zipped_size={_mb_size(Path(save_to))} raw_size={_mb_size(bin_path)}"
+    )
     return save_to
 
 
@@ -105,7 +105,7 @@ class AppStack(Stack):
         rust_layer = func.LayerVersion(
             self,
             "HoseCarrier",
-            code=func.Code.from_asset(build_deployment_zip("hose-carrier.zip")),
+            code=func.Code.from_asset(rust_compile_to_zip("hose-carrier.zip")),
             compatible_runtimes=[func.Runtime.PYTHON_3_8],
             layer_version_name="hose-carrier",
         )
@@ -293,20 +293,5 @@ class Function(Construct):
 
 
 app = cdk.App()
-
-AppStack(
-    app,
-    "SpannerHose",
-    # If you don't specify 'env', this stack will be environment-agnostic.
-    # Account/Region-dependent features and context lookups will not work,
-    # but a single synthesized template can be deployed anywhere.
-    # Uncomment the next line to specialize this stack for the AWS Account
-    # and Region that are implied by the current CLI configuration.
-    # env=cdk.Environment(account=os.getenv('CDK_DEFAULT_ACCOUNT'), region=os.getenv('CDK_DEFAULT_REGION')),
-    # Uncomment the next line if you know exactly what Account and Region you
-    # want to deploy the stack to. */
-    # env=cdk.Environment(account='123456789012', region='us-east-1'),
-    # For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html
-)
-
+AppStack(app, "SpannerHose")
 app.synth()

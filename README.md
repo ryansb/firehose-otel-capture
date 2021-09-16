@@ -9,10 +9,9 @@ traces/namespace=!{partitionKeyFromQuery:ns}/date=!{timestamp:yyyy-MM-dd}/
 
 ns = ."service.namespace" OR "nil"
 timestamp = current UTC time, as YYYY-MM-DD
-
-Sample path:
-traces/namespace=petstore/date=2021-02-01/SpannerHose-LakeStreamFF47BEAA-jUKyOeLdxYqd-1-2021-02-01-15-22-36-d49a6ead-b4fc-315e-b7c7-7590ff6bb336
 ```
+
+Sample path: `traces/namespace=petstore/date=2021-02-01/SpannerHose-LakeStreamFF47BEAA-jUKyOeLdxYqd-1-2021-02-01-15-22-36-d49a6ead-b4fc-315e-b7c7-7590ff6bb336`
 
 ## Usage
 
